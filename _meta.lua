@@ -2,8 +2,8 @@
 
 return {
     name = "randomquote",
-    fullname = "Random Quote on Lock",
-    version = "0.1.1",
+    fullname = "Random Quote on Unlock",
+    version = "1.0.2",
     author = "DenisovichDev",
-    description = "Shows a random quotation from my highlights when locked.",
+    description = "Shows a quote when unlocked.",
 }
