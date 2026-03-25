@@ -65,11 +65,15 @@ local function write_setting(k, v)
 end
 
 local plugin_font_face_name = read_setting("font_face", G_reader_settings:readSetting("cre_font") or "infofont")
-local plugin_font_size = tonumber(read_setting("font_size",
-    G_reader_settings:readSetting("copt_font_size") or Font.sizemap.infofont)) or Font.sizemap.infofont
+local plugin_font_size = tonumber(read_setting("font_size", G_reader_settings:readSetting("copt_font_size") or Font.sizemap.infofont)) or Font.sizemap.infofont
 local plugin_book_dir = read_setting("book_dir", "/mnt/us/Books")
 local plugin_title_mode = read_setting("title_mode", "default") -- values: "default", "custom", "none"
 local plugin_title_custom = read_setting("title_custom", "Random Quote from Library")
+-- Advanced extraction settings
+local plugin_auto_extract = read_setting("auto_extract_enabled", false)
+local plugin_auto_extract_interval_days = tonumber(read_setting("auto_extract_interval_days", 1)) or 1
+local plugin_extract_colors = read_setting("extract_colors", nil) -- nil = all
+local plugin_italicize_quote = read_setting("italicize_quote", false)
 local plugin_last_extract_time = tonumber(read_setting("last_extract_time", 0)) or 0
 
 local function plugin_get_face()
@@ -91,7 +95,7 @@ local function load_quotes()
     -- load quotes.lua from this plugin directory explicitly (avoid global require path issues)
     local source = debug.getinfo(1, "S").source
     local plugin_dir = ""
-    if source:sub(1, 1) == "@" then
+    if source:sub(1,1) == "@" then
         local this_path = source:sub(2)
         plugin_dir = this_path:match("(.*/)") or ""
     end
@@ -107,8 +111,7 @@ local function load_quotes()
         end
     end
     -- fallback defaults
-    return { _("Hello, reader!"), _("Stay focused"), _("Time to read!"), _("Random wisdom incoming..."), _(
-        "Enjoy the moment") }
+    return { _("Hello, reader!"), _("Stay focused"), _("Time to read!"), _("Random wisdom incoming..."), _("Enjoy the moment") }
 end
 
 -- format a quote entry for display; supports either string or {text,book,author}
@@ -120,9 +123,8 @@ local function get_title_text(entry)
         author = tostring(entry.author or "")
     end
 
-    if plugin_title_mode == "custom" then
-        return plugin_title_custom or ""
-    end
+    if plugin_title_mode == "custom" then return plugin_title_custom or "" end
+
 
     -- Default mode: dynamic based on author
     if author ~= "" then
@@ -132,6 +134,7 @@ local function get_title_text(entry)
         -- return "Quote by " .. author
         -- return author
     else
+
         return _("Random Quote from Library") -- fallback when no author
     end
 end
@@ -169,10 +172,9 @@ local function format_quote(entry)
     -- quote text (wrapped in typographic quotes)
     local quote_text = "\u{201C}" .. text .. "\u{201D}"
     -- italicize only when enabled in settings
-    table.insert(chunks, { text = quote_text, align = "left" })
+    table.insert(chunks, { text = quote_text, italic = plugin_italicize_quote, align = "left" })
     table.insert(chunks, { text = "" })
 
-    -- Book (still show if present)
     if book ~= "" then
         table.insert(chunks, { text = book, bold = true, align = "left" })
     end
@@ -187,7 +189,7 @@ local function format_quote(entry)
 end
 
 -- Define plugin (use WidgetContainer like other plugins)
-local RandomQuote = WidgetContainer:extend {
+local RandomQuote = WidgetContainer:extend{
     name = "randomquote",
     is_doc_only = false,
 
@@ -222,8 +224,7 @@ function RandomQuote:init()
 end
 
 function RandomQuote:onDispatcherRegisterActions()
-    Dispatcher:registerAction("randomquote_extract_highlights",
-        { category = "none", event = "RandomQuote.ExtractHighlights", title = _("Extract highlights"), general = true, })
+    Dispatcher:registerAction("randomquote_extract_highlights", {category="none", event="RandomQuote.ExtractHighlights", title=_("Extract highlights"), general=true,})
 end
 
 -- Add menu item to main menu
@@ -240,23 +241,23 @@ function RandomQuote:addToMainMenu(menu_items)
     table.insert(group, {
         text = _("Extract Highlighted Texts"),
         callback = function()
-            local info = InfoMessage:new { text = _("Scanning for highlights…"), timeout = 2 }
+            local info = InfoMessage:new{ text = _("Scanning for highlights…"), timeout = 2 }
             UIManager:show(info)
             -- perform extraction (may take a while); protect with pcall to always show a result
             local ok, res = pcall(RandomQuote.extract_highlights_to_quotes)
             if not ok then
-                UIManager:show(InfoMessage:new { text = string.format(_("Error during extraction: %s"), tostring(res)), timeout = 4 })
+                UIManager:show(InfoMessage:new{ text = string.format(_("Error during extraction: %s"), tostring(res)), timeout = 4 })
                 return
             end
             local nb = tonumber(res) or 0
             if nb and nb > 0 then
                 if nb == 1 then
-                    UIManager:show(InfoMessage:new { text = _("1 highlight found and saved."), timeout = 3 })
+                    UIManager:show(InfoMessage:new{ text = _("1 highlight found and saved."), timeout = 3 })
                 else
-                    UIManager:show(InfoMessage:new { text = string.format(_("%d highlights found and saved."), nb), timeout = 3 })
+                    UIManager:show(InfoMessage:new{ text = string.format(_("%d highlights found and saved."), nb), timeout = 3 })
                 end
             else
-                UIManager:show(InfoMessage:new { text = _("No highlights found."), timeout = 3 })
+                UIManager:show(InfoMessage:new{ text = _("No highlights found."), timeout = 3 })
             end
         end,
     })
@@ -314,7 +315,7 @@ function RandomQuote:addToMainMenu(menu_items)
                 callback = function(touchmenu_instance)
                     local MultiInputDialog = require("ui/widget/multiinputdialog")
                     local dlg
-                    dlg = MultiInputDialog:new {
+                    dlg = MultiInputDialog:new{
                         title = _("Custom Title"),
                         fields = { { text = plugin_title_custom or "", hint = _("Title") } },
                         buttons = {
@@ -333,10 +334,7 @@ function RandomQuote:addToMainMenu(menu_items)
                                         write_setting("title_custom", plugin_title_custom)
                                         write_setting("title_mode", "custom")
                                         UIManager:close(dlg)
-                                        if touchmenu_instance and touchmenu_instance.updateItems then
-                                            touchmenu_instance
-                                                :updateItems()
-                                        end
+                                        if touchmenu_instance and touchmenu_instance.updateItems then touchmenu_instance:updateItems() end
                                         -- show a sample when title changes
                                         RandomQuote:showSample()
                                     end,
@@ -353,83 +351,184 @@ function RandomQuote:addToMainMenu(menu_items)
 
     -- font face selector (cycle through a short list)
     local faces = { "infofont", "smallinfofont", "cfont", "ffont" }
-    -- font face selector: open submenu listing all available faces
-    table.insert(settings_item.sub_item_table, {
-        text_func = function() return string.format("%s: %s", _("Font"), plugin_font_face_name) end,
-        sub_item_table_func = function()
-            local subs = {}
-            local FontList = require("fontlist")
-            local cre = require("document/credocument"):engineInit()
-            local face_list = cre.getFontFaces()
-            for _, v in ipairs(face_list) do
-                local font_filename, font_faceindex = cre.getFontFaceFilenameAndFaceIndex(v)
-                local label = FontList:getLocalizedFontName(font_filename, font_faceindex) or v
-                table.insert(subs, {
-                    text = label,
-                    font_func = function(size)
-                        if font_filename and font_faceindex then
-                            return Font:getFace(font_filename, size, font_faceindex)
-                        end
-                    end,
-                    callback = function()
-                        plugin_font_face_name = v
-                        write_setting("font_face", plugin_font_face_name)
-                        -- show a sample with new font
-                        RandomQuote:showSample()
-                    end,
-                    radio = true,
-                    checked_func = function() return plugin_font_face_name == v end,
-                    menu_item_id = v,
-                })
-            end
-            return subs
-        end,
-    })
+        -- font face selector: open submenu listing all available faces
+        table.insert(settings_item.sub_item_table, {
+            text_func = function() return string.format("%s: %s", _("Font"), plugin_font_face_name) end,
+            sub_item_table_func = function()
+                local subs = {}
+                local FontList = require("fontlist")
+                local cre = require("document/credocument"):engineInit()
+                local face_list = cre.getFontFaces()
+                for _, v in ipairs(face_list) do
+                    local font_filename, font_faceindex = cre.getFontFaceFilenameAndFaceIndex(v)
+                    local label = FontList:getLocalizedFontName(font_filename, font_faceindex) or v
+                    table.insert(subs, {
+                        text = label,
+                        font_func = function(size)
+                            if font_filename and font_faceindex then
+                                return Font:getFace(font_filename, size, font_faceindex)
+                            end
+                        end,
+                        callback = function()
+                            plugin_font_face_name = v
+                            write_setting("font_face", plugin_font_face_name)
+                            -- show a sample with new font
+                            RandomQuote:showSample()
+                        end,
+                        radio = true,
+                        checked_func = function() return plugin_font_face_name == v end,
+                        menu_item_id = v,
+                    })
+                end
+                return subs
+            end,
+        })
     -- font size selector (cycle common sizes)
     local sizes = { 12, 14, 16, 18, 20 }
-    -- font size selector: submenu of common sizes
-    local sizes = { 10, 12, 14, 16, 18, 20, 24 }
+        -- font size selector: submenu of common sizes
+        local sizes = { 10, 12, 14, 16, 18, 20, 24 }
+        table.insert(settings_item.sub_item_table, {
+            text_func = function() return string.format("%s: %d", _("Font size"), plugin_font_size) end,
+            sub_item_table = (function()
+                local s = {}
+                for _, v in ipairs(sizes) do
+                    table.insert(s, {
+                        text = tostring(v),
+                        callback = function()
+                            plugin_font_size = v
+                            write_setting("font_size", plugin_font_size)
+                            -- show a sample with new size
+                            RandomQuote:showSample()
+                        end,
+                        radio = true,
+                        checked_func = function() return plugin_font_size == v end,
+                    })
+                end
+                return s
+            end)(),
+        })
+
+    -- Italicize quote toggle (CURRENTLY NOT WORKING)
+
+    -- table.insert(settings_item.sub_item_table, {
+    --         text_func = function() return string.format("%s: %s", _("Italicize Quote"), plugin_italicize_quote and _("On") or _("Off")) end,
+    --         checked_func = function() return plugin_italicize_quote end,
+    --         callback = function()
+    --             plugin_italicize_quote = not plugin_italicize_quote
+    --             write_setting("italicize_quote", plugin_italicize_quote)
+    --             show_sample()
+    --         end,
+    --     })
+
     table.insert(settings_item.sub_item_table, {
-        text_func = function() return string.format("%s: %d", _("Font size"), plugin_font_size) end,
-        sub_item_table = (function()
-            local s = {}
-            for _, v in ipairs(sizes) do
-                table.insert(s, {
-                    text = tostring(v),
-                    callback = function()
-                        plugin_font_size = v
-                        write_setting("font_size", plugin_font_size)
-                        -- show a sample with new size
-                        RandomQuote:showSample()
+            text_func = function() return string.format("%s: %s", _("Book dir"), plugin_book_dir) end,
+            callback = function(touchmenu_instance)
+                local PathChooser = require("ui/widget/pathchooser")
+                local old_path = plugin_book_dir
+                UIManager:show(PathChooser:new{
+                    select_directory = true,
+                    select_file = false,
+                    height = Screen:getHeight(),
+                    path = old_path,
+                    onConfirm = function(dir_path)
+                        if dir_path and dir_path:sub(-1) ~= "/" then dir_path = dir_path .. "/" end
+                        plugin_book_dir = dir_path
+                        write_setting("book_dir", plugin_book_dir)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
                     end,
-                    radio = true,
-                    checked_func = function() return plugin_font_size == v end,
                 })
+            end,
+        })
+    -- Advanced Settings (inserted at the end of Random Quote Settings)
+    do
+        local advanced_item = { text = _("Advanced Settings"), sub_item_table = {} }
+        table.insert(settings_item.sub_item_table, advanced_item)
+        -- Automatic extraction toggle
+        table.insert(advanced_item.sub_item_table, {
+            text = _("Automatic Highlight Extraction"),
+            sub_item_table = {
+                {
+                    text = _("Enable Automatic Extraction"),
+                    checked_func = function() return plugin_auto_extract end,
+                    callback = function()
+                        plugin_auto_extract = not plugin_auto_extract
+                        write_setting("auto_extract_enabled", plugin_auto_extract)
+                    end,
+                },
+                {
+                    text_func = function() return string.format("%s: %d %s", _("Interval"), plugin_auto_extract_interval_days, _("days")) end,
+                    sub_item_table = (function()
+                        local opts = {1, 7, 14, 30}
+                        local s = {}
+                        for __, v in ipairs(opts) do
+                            table.insert(s, {
+                                text = tostring(v) .. " " .. _("days"),
+                                radio = true,
+                                checked_func = function() return plugin_auto_extract_interval_days == v end,
+                                callback = function(touchmenu_instance)
+                                    plugin_auto_extract_interval_days = v
+                                    write_setting("auto_extract_interval_days", plugin_auto_extract_interval_days)
+                                    if touchmenu_instance and touchmenu_instance.updateItems then touchmenu_instance:updateItems() end
+                                end,
+                            })
+                        end
+                        return s
+                    end)(),
+                },
+            },
+        })
+        -- Highlight color selection (import from reader highlight module when possible)
+        local all_colors = nil
+        do
+            local ok, RH = pcall(require, "apps/reader/modules/readerhighlight")
+            if ok and RH and type(RH.highlight_colors) == "table" then
+                all_colors = {}
+                for _, v in ipairs(RH.highlight_colors) do table.insert(all_colors, { v[1], v[2] }) end
             end
-            return s
-        end)(),
-    })
-    table.insert(settings_item.sub_item_table, {
-        text_func = function() return string.format("%s: %s", _("Book dir"), plugin_book_dir) end,
-        callback = function(touchmenu_instance)
-            local PathChooser = require("ui/widget/pathchooser")
-            local old_path = plugin_book_dir
-            UIManager:show(PathChooser:new {
-                select_directory = true,
-                select_file = false,
-                height = Screen:getHeight(),
-                path = old_path,
-                onConfirm = function(dir_path)
-                    if dir_path and dir_path:sub(-1) ~= "/" then dir_path = dir_path .. "/" end
-                    plugin_book_dir = dir_path
-                    write_setting("book_dir", plugin_book_dir)
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-                end,
+        end
+        if not all_colors then
+            all_colors = { {_("Red"), "red"}, {_("Orange"), "orange"}, {_("Yellow"), "yellow"}, {_("Green"), "green"}, {_("Olive"), "olive"}, {_("Cyan"), "cyan"}, {_("Blue"), "blue"}, {_("Purple"), "purple"}, {_("Gray"), "gray"} }
+        end
+        local function is_color_selected(col)
+            if not plugin_extract_colors then return true end
+            for _, v in ipairs(plugin_extract_colors) do if v == col then return true end end
+            return false
+        end
+        local function toggle_color(col)
+            if not plugin_extract_colors then
+                plugin_extract_colors = {}
+                for _, v in ipairs(all_colors) do table.insert(plugin_extract_colors, v[2]) end
+            end
+            local found = false
+            for i, v in ipairs(plugin_extract_colors) do
+                if v == col then table.remove(plugin_extract_colors, i); found = true; break end
+            end
+            if not found then table.insert(plugin_extract_colors, col) end
+            write_setting("extract_colors", plugin_extract_colors)
+        end
+        local color_subs = {}
+        table.insert(color_subs, {
+            text = _("Select all colors"),
+            checked_func = function() return plugin_extract_colors == nil end,
+            callback = function()
+                plugin_extract_colors = nil
+                write_setting("extract_colors", nil)
+            end,
+        })
+        for _, v in ipairs(all_colors) do
+            table.insert(color_subs, {
+                text = v[1],
+                checked_func = function() return is_color_selected(v[2]) end,
+                callback = function() toggle_color(v[2]) end,
             })
-        end,
-    })
+        end
+        table.insert(advanced_item.sub_item_table, {
+            text = _("Set Highlight Color to Extract"),
+            sub_item_table = color_subs,
+        })
+    end
 end
 
 -- Called when device wakes from lock or focus resumes
@@ -437,7 +536,22 @@ function RandomQuote:onResume()
     -- seed once with time plus an increment to avoid identical seeds on quick resumes
     math.randomseed((os.time() or 0) + (tostring({}):len() or 0))
 
+    -- Automatic extraction if enabled and interval elapsed
+    if plugin_auto_extract then
+        local now = os.time() or 0
+        local elapsed = now - (plugin_last_extract_time or 0)
+        if elapsed >= (plugin_auto_extract_interval_days or 1) * 24 * 3600 then
+            pcall(function()
+                local nb = RandomQuote.extract_highlights_to_quotes()
+                -- ignore nb here; user can manually extract too
+                plugin_last_extract_time = os.time()
+                write_setting("last_extract_time", plugin_last_extract_time)
+            end)
+        end
+    end
+
     local messages = load_quotes()
+    -- pick a random entry and format for display
     if type(messages) ~= "table" or #messages == 0 then
         return
     end
@@ -473,148 +587,26 @@ function RandomQuote:onResume()
     self.active_quote = quote_widget
 end
 
--- Utility: scan book folders for .sdr metadata files and extract quoted strings
+
+-- Utility: wrapper that delegates scanning to scan.lua and writes the quotes file
 function RandomQuote.extract_highlights_to_quotes()
-    local books_dirs = { plugin_book_dir }
-    local found = {}
-    local seen = {}
-
-    local function accept(s)
-        if not s then return false end
-        s = s:gsub("\n", " ")
-        s = s:match("^%s*(.-)%s*$") or s
-        if #s < 20 then return false end
-        if s:match("^") then end
-        if s:match("/") or s:match("\\\\") then return false end
-        if s:match("^%s*$") then return false end
-        return true
-    end
-
-    -- We'll detect any metadata.*.lua (or backup *.lua.old) file inside the
-    -- book sidecar folder rather than relying on a single hardcoded name.
-    local metadata_pattern = "^metadata%..+%.lua"
-
-    local books_dir = nil
-    for _, d in ipairs(books_dirs) do
-        if lfs.attributes(d, "mode") == "directory" then
-            books_dir = d
-            break
-        end
-    end
-    if not books_dir then
+    local books_dir = plugin_book_dir
+    if not books_dir or lfs.attributes(books_dir, "mode") ~= "directory" then
         return 0
     end
 
-    for entry in lfs.dir(books_dir) do
-        if entry and entry:match("%.sdr$") then
-            -- debug: show current folder being scanned
-            UIManager:show(InfoMessage:new { text = string.format(_("Scanning: %s"), entry), timeout = 2 })
-            local bpath = books_dir .. "/" .. entry
-            if lfs.attributes(bpath, "mode") == "directory" then
-                for m in lfs.dir(bpath) do
-                    if m and m:match(metadata_pattern) then
-                        local mp = bpath .. "/" .. m
-                        if lfs.attributes(mp, "mode") == "file" then
-                            -- Prefer loading the metadata Lua file and reading its table
-                            local ok, t = pcall(function()
-                                local fn, err = loadfile(mp)
-                                if not fn then error(err) end
-                                return fn()
-                            end)
-                            if ok and type(t) == "table" and type(t.annotations) == "table" then
-                                -- obtain and normalize book and author from metadata
-                                local book = nil
-                                local author = nil
-                                local function normalize_authors(a)
-                                    if not a then return nil end
-                                    if type(a) == "string" then
-                                        return a
-                                    elseif type(a) == "table" then
-                                        -- join array of authors
-                                        local parts = {}
-                                        for _, v in ipairs(a) do
-                                            if type(v) == "string" and v:match("%S") then table.insert(parts, v) end
-                                        end
-                                        if #parts > 0 then return table.concat(parts, ", ") end
-                                    end
-                                    return nil
-                                end
-
-                                if type(t.doc_props) == "table" then
-                                    if type(t.doc_props.title) == "string" and t.doc_props.title:match("%S") then
-                                        book = t.doc_props.title
-                                    end
-                                    author = normalize_authors(t.doc_props.authors)
-                                end
-                                if (not book or book == "") and type(t.stats) == "table" then
-                                    if type(t.stats.title) == "string" and t.stats.title:match("%S") then
-                                        book = t.stats
-                                            .title
-                                    end
-                                end
-                                if (not author or author == "") and type(t.stats) == "table" then
-                                    author = normalize_authors(t.stats.authors)
-                                end
-                                -- fallback: derive a readable book name from the .sdr folder name
-                                if (not book or book == "") and type(entry) == "string" then
-                                    local derived = entry:gsub("%.sdr$", "")
-                                    derived = derived:gsub("[_%-]+", " ")
-                                    derived = derived:gsub("^%s*(.-)%s*$", "%1")
-                                    if derived:match("%S") then book = derived end
-                                end
-
-                                for _, ann in pairs(t.annotations) do
-                                    if type(ann) == "table" then
-                                        local txt = ann.text or ann.note
-                                        if type(txt) == "string" and accept(txt) then
-                                            local key = txt ..
-                                                "\x1f" .. tostring(book or "") .. "\x1f" .. tostring(author or "")
-                                            if not seen[key] then
-                                                seen[key] = true
-                                                table.insert(found,
-                                                    { text = txt, book = book or "", author = author or "" })
-                                            end
-                                        end
-                                    end
-                                end
-                            else
-                                -- fallback: read raw file and extract quoted strings
-                                local fh = io.open(mp, "r")
-                                if fh then
-                                    local content = fh:read("*a") or ""
-                                    fh:close()
-                                    for s in content:gmatch('"([^"]+)"') do
-                                        if accept(s) then
-                                            local key = s .. "\x1f" .. "" .. "\x1f" .. ""
-                                            if not seen[key] then
-                                                seen[key] = true
-                                                table.insert(found, { text = s, book = "", author = "" })
-                                            end
-                                        end
-                                    end
-                                    for s in content:gmatch("'([^']+)'") do
-                                        if accept(s) then
-                                            local key = s .. "\x1f" .. "" .. "\x1f" .. ""
-                                            if not seen[key] then
-                                                seen[key] = true
-                                                table.insert(found, { text = s, book = "", author = "" })
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
+    local colors = plugin_extract_colors -- nil means all
+    local found = {}
+    local ok, res = pcall(function()
+        found = Scan.extract_highlights(books_dir, { max_depth = 5, colors = colors })
+    end)
+    if not ok then return 0 end
 
     -- write quotes.lua in plugin directory
     local source = debug.getinfo(1, "S").source
-    if source:sub(1, 1) == "@" then
+    if source:sub(1,1) == "@" then
         local this_path = source:sub(2)
-        local plugin_dir = this_path:match("(.*/)") or ""
+        local plugin_dir = this_path:match("(.*/)" ) or ""
         local quotes_path = plugin_dir .. "quotes.lua"
         local fh = io.open(quotes_path, "w")
         if fh then
@@ -627,12 +619,10 @@ function RandomQuote.extract_highlights_to_quotes()
                 local esc_text = text:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\r", "\\r"):gsub("\n", "\\n")
                 local esc_book = book:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\r", "\\r"):gsub("\n", "\\n")
                 local esc_author = author:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\r", "\\r"):gsub("\n", "\\n")
-                fh:write('    { text = "' ..
-                    esc_text .. '", book = "' .. esc_book .. '", author = "' .. esc_author .. '" },\n')
+                fh:write('    { text = "' .. esc_text .. '", book = "' .. esc_book .. '", author = "' .. esc_author .. '" },\n')
             end
             fh:write("}\n\nreturn quotes\n")
             fh:close()
-            -- clear require cache for quotes module so subsequent require() picks updated file
             package.loaded["quotes"] = nil
         end
     end
